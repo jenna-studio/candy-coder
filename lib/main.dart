@@ -711,33 +711,38 @@ class _CodeEditorWithLineNumbersState extends State<_CodeEditorWithLineNumbers> 
 
         // Code editor - directly editable
         Expanded(
-          child: SingleChildScrollView(
-            controller: _scrollController,
-            child: TextField(
-              controller: widget.controller,
-              maxLines: null,
-              keyboardType: TextInputType.multiline,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 14,
-                color: Color(0xFFF8F8F2),
-                height: 1.5,
-              ),
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.all(16),
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                hintText: widget.placeholder,
-                hintStyle: const TextStyle(
+          child: Container(
+            color: const Color(0xFF282A36), // Dracula background
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              child: TextField(
+                controller: widget.controller,
+                maxLines: null,
+                keyboardType: TextInputType.multiline,
+                style: const TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 14,
-                  color: Color(0xFF6272A4),
+                  color: Color(0xFFF8F8F2), // Dracula foreground
                   height: 1.5,
                 ),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: const Color(0xFF282A36), // Dracula background
+                  contentPadding: const EdgeInsets.all(16),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  hintText: widget.placeholder,
+                  hintStyle: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 14,
+                    color: Color(0xFF6272A4), // Dracula comment
+                    height: 1.5,
+                  ),
+                ),
+                cursorColor: const Color(0xFFFF79C6), // Dracula pink
+                onChanged: (_) => setState(() {}), // Update line numbers
               ),
-              cursorColor: const Color(0xFFFF79C6),
-              onChanged: (_) => setState(() {}), // Update line numbers
             ),
           ),
         ),
@@ -806,6 +811,156 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
         return '// Write your Java code here...';
       default:
         return '// Write your code here...';
+    }
+  }
+
+  Future<void> _runCode() async {
+    if (_codeController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please write some code first!'),
+          backgroundColor: CandyColors.error,
+        ),
+      );
+      return;
+    }
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Running your code...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Convert test cases to the format expected by PistonService
+    final testCases = widget.problem.testCases
+        .map((tc) => {
+              'input': tc.input,
+              'expectedOutput': tc.expectedOutput,
+            })
+        .toList();
+
+    // Map language names to Piston format
+    final languageMap = {
+      'JavaScript': 'javascript',
+      'Python': 'python',
+      'C++': 'cpp',
+      'Java': 'java',
+    };
+
+    final pistonLanguage = languageMap[_language] ?? 'javascript';
+
+    // Run code against test cases
+    final result = await PistonService.runTestCases(
+      code: _codeController.text,
+      language: pistonLanguage,
+      testCases: testCases,
+    );
+
+    // Close loading dialog
+    if (mounted) Navigator.of(context).pop();
+
+    // Show results dialog
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                result['overallSuccess'] ? Icons.check_circle : Icons.error,
+                color: result['overallSuccess'] ? CandyColors.green : CandyColors.error,
+              ),
+              const SizedBox(width: 8),
+              Text(result['overallSuccess'] ? 'All Tests Passed!' : 'Tests Failed'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Passed: ${result['passedCount']}/${result['totalCount']} test cases',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Test Results:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                ...((result['results'] as List).map((testResult) {
+                  final passed = testResult['passed'] as bool;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: passed
+                          ? CandyColors.green.withValues(alpha: 0.1)
+                          : CandyColors.error.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: passed ? CandyColors.green : CandyColors.error,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              passed ? Icons.check : Icons.close,
+                              size: 16,
+                              color: passed ? CandyColors.green : CandyColors.error,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Test Case ${testResult['testCaseNumber']}',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        if (!passed) ...[
+                          const SizedBox(height: 8),
+                          Text('Input: ${testResult['input']}'),
+                          Text('Expected: ${testResult['expectedOutput']}'),
+                          Text('Got: ${testResult['actualOutput']}'),
+                          if (testResult['error'].toString().isNotEmpty)
+                            Text(
+                              'Error: ${testResult['error']}',
+                              style: const TextStyle(color: CandyColors.error),
+                            ),
+                        ],
+                      ],
+                    ),
+                  );
+                })),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
     }
   }
 
@@ -916,30 +1071,54 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 48, // Minimum touch target size
-              child: ElevatedButton(
-                onPressed: () async {
-                  // Dismiss keyboard before submitting
-                  FocusScope.of(context).unfocus();
-
-                  await widget.onSubmit(
-                    widget.problem.id,
-                    _language,
-                    _codeController.text,
-                  );
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Solution submitted successfully!'),
+            // Action buttons
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        FocusScope.of(context).unfocus();
+                        await _runCode();
+                      },
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Run Code'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: CandyColors.blue,
+                        side: const BorderSide(color: CandyColors.blue),
                       ),
-                    );
-                    Navigator.of(context).pop();
-                  }
-                },
-                child: const Text('Submit Solution'),
-              ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: SizedBox(
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        FocusScope.of(context).unfocus();
+
+                        await widget.onSubmit(
+                          widget.problem.id,
+                          _language,
+                          _codeController.text,
+                        );
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Solution submitted successfully!'),
+                            ),
+                          );
+                          Navigator.of(context).pop();
+                        }
+                      },
+                      icon: const Icon(Icons.send),
+                      label: const Text('Submit'),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 100), // Extra space for scrolling past keyboard
           ],
