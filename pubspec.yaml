@@ -46,8 +46,8 @@ dependencies:
   # Markdown rendering
   flutter_markdown: ^0.6.18
 
-  # Google Generative AI
-  google_generative_ai: ^0.2.1
+  # Syntax highlighting
+  flutter_highlight: ^0.7.0
 
   # State management & utilities
   provider: ^6.1.1

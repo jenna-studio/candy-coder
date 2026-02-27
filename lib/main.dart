@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_highlight/flutter_highlight.dart';
+import 'package:flutter_highlight/themes/dracula.dart';
 import 'theme/candy_theme.dart';
 import 'services/database_service.dart';
-import 'services/gemini_service.dart';
 import 'models/user.dart';
 import 'models/problem.dart';
 import 'models/submission.dart';
@@ -13,13 +13,6 @@ void main() async {
 
   // Initialize services
   await DatabaseService().database;
-
-  // Initialize Gemini AI (you'll need to provide your API key)
-  final prefs = await SharedPreferences.getInstance();
-  final apiKey = prefs.getString('gemini_api_key') ?? '';
-  if (apiKey.isNotEmpty) {
-    GeminiService().initialize(apiKey);
-  }
 
   runApp(const CandyCoderApp());
 }
@@ -261,14 +254,14 @@ class _MainScreenState extends State<MainScreen> {
     String language,
     String code,
   ) async {
-    // This is a simplified version - you'd call the AI service here
+    // Store submission without AI evaluation
     final submission = Submission(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       problemId: problemId,
       language: language,
       code: code,
       status: 'Success',
-      feedback: 'Great job! Your solution works correctly.',
+      feedback: 'Code submitted successfully! Manual review recommended.',
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
 
@@ -451,6 +444,40 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
     super.dispose();
   }
 
+  String _getHighlightLanguage(String language) {
+    switch (language) {
+      case 'JavaScript':
+        return 'javascript';
+      case 'Python':
+        return 'python';
+      case 'C++':
+        return 'cpp';
+      case 'Java':
+        return 'java';
+      default:
+        return 'javascript';
+    }
+  }
+
+  String _getLanguageDisplayName(String language) {
+    return language;
+  }
+
+  String _getPlaceholderCode(String language) {
+    switch (language) {
+      case 'JavaScript':
+        return '// Write your JavaScript code here...';
+      case 'Python':
+        return '# Write your Python code here...';
+      case 'C++':
+        return '// Write your C++ code here...';
+      case 'Java':
+        return '// Write your Java code here...';
+      default:
+        return '// Write your code here...';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -505,24 +532,104 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
           ),
           const SizedBox(height: 16),
           Container(
+            height: 400,
+            decoration: BoxDecoration(
+              color: const Color(0xFF282A36),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: CandyColors.blue.withValues(alpha: 0.3),
+                width: 2,
+              ),
+            ),
+            child: Column(
+              children: [
+                // Editor toolbar
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF1E1F26),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(14),
+                      topRight: Radius.circular(14),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.code, size: 16, color: Colors.white54),
+                      const SizedBox(width: 8),
+                      Text(
+                        _getLanguageDisplayName(_language),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF50FA7B),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Ready',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Code editor with syntax highlighting
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: HighlightView(
+                      _codeController.text.isEmpty ? _getPlaceholderCode(_language) : _codeController.text,
+                      language: _getHighlightLanguage(_language),
+                      theme: draculaTheme,
+                      padding: EdgeInsets.zero,
+                      textStyle: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 14,
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Editable text field (for input)
+          Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: TextField(
               controller: _codeController,
-              maxLines: 15,
+              maxLines: 10,
               style: const TextStyle(
                 fontFamily: 'monospace',
                 color: Colors.white,
                 fontSize: 14,
               ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 border: InputBorder.none,
-                hintText: '// Write your code here',
-                hintStyle: TextStyle(color: Colors.white38),
+                hintText: _getPlaceholderCode(_language),
+                hintStyle: const TextStyle(color: Colors.white38),
               ),
+              cursorColor: CandyColors.pink,
+              onChanged: (value) {
+                setState(() {}); // Refresh to update highlight view
+              },
             ),
           ),
           const SizedBox(height: 24),
