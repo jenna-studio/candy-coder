@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/candy_theme.dart';
-import '../services/baekjoon_service.dart';
+import '../services/problem_import_service.dart';
+import '../services/url_parser.dart';
 import '../services/database_service.dart';
 
 class ImportProblemScreen extends StatefulWidget {
@@ -12,17 +13,25 @@ class ImportProblemScreen extends StatefulWidget {
 
 class _ImportProblemScreenState extends State<ImportProblemScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _urlController = TextEditingController();
   final _problemIdController = TextEditingController();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _descriptionKoController = TextEditingController();
   final _inputFormatController = TextEditingController();
   final _outputFormatController = TextEditingController();
+  final _constraintsController = TextEditingController();
 
   String _selectedDifficulty = 'Medium';
   String _selectedTopic = 'Implementation';
+  String _selectedLanguage = 'EN'; // EN or KR
+  ProblemPlatform? _detectedPlatform;
+  String? _helpText;
 
   final List<Map<String, TextEditingController>> _sampleCases = [];
   bool _isImporting = false;
+
+  final _importService = ProblemImportService();
 
   @override
   void initState() {
@@ -32,11 +41,14 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
 
   @override
   void dispose() {
+    _urlController.dispose();
     _problemIdController.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
+    _descriptionKoController.dispose();
     _inputFormatController.dispose();
     _outputFormatController.dispose();
+    _constraintsController.dispose();
     for (var sample in _sampleCases) {
       sample['input']?.dispose();
       sample['output']?.dispose();
@@ -63,6 +75,25 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
     }
   }
 
+  void _handleUrlChange(String value) {
+    if (value.isEmpty) {
+      setState(() {
+        _detectedPlatform = null;
+        _helpText = null;
+      });
+      return;
+    }
+
+    final suggestions = _importService.getSuggestions(value);
+
+    setState(() {
+      _detectedPlatform = suggestions.platform;
+      _helpText = suggestions.helpText;
+      _problemIdController.text = suggestions.problemId;
+      _selectedDifficulty = suggestions.suggestedDifficulty;
+    });
+  }
+
   Future<void> _importProblem() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -71,8 +102,6 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
     setState(() => _isImporting = true);
 
     try {
-      final service = BaekjoonService();
-
       // Prepare sample cases
       final sampleCases = _sampleCases.map((sample) {
         return {
@@ -81,17 +110,23 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
         };
       }).toList();
 
-      // Create problem
-      final problem = service.createProblemFromManualEntry(
-        problemId: _problemIdController.text,
+      // Create problem using unified service
+      final problem = _importService.createProblemFromUrl(
+        urlOrId: _urlController.text.isNotEmpty ? _urlController.text : _problemIdController.text,
         title: _titleController.text,
         description: _descriptionController.text,
-        inputFormat: _inputFormatController.text,
-        outputFormat: _outputFormatController.text,
+        descriptionKo: _descriptionKoController.text.isNotEmpty ? _descriptionKoController.text : null,
+        inputFormat: _inputFormatController.text.isNotEmpty ? _inputFormatController.text : null,
+        outputFormat: _outputFormatController.text.isNotEmpty ? _outputFormatController.text : null,
+        constraints: _constraintsController.text.isNotEmpty ? _constraintsController.text : null,
         sampleCases: sampleCases,
         difficulty: _selectedDifficulty,
         topic: _selectedTopic,
       );
+
+      if (problem == null) {
+        throw Exception('Failed to create problem');
+      }
 
       // Save to database
       await DatabaseService().insertProblem(problem);
@@ -99,7 +134,7 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Problem ${_problemIdController.text} imported successfully!'),
+            content: Text('Problem "${_titleController.text}" imported successfully!'),
             backgroundColor: CandyColors.blue,
           ),
         );
@@ -121,7 +156,7 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
     }
   }
 
-  void _useTemplate(ProblemTemplate template) {
+  void _useTemplate(dynamic template) {
     setState(() {
       _titleController.text = template.sampleTitle;
       _descriptionController.text = template.sampleDescription;
@@ -147,7 +182,11 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Import Baekjoon Problem'),
+        title: Text(_detectedPlatform == ProblemPlatform.leetcode
+            ? 'Import LeetCode Problem'
+            : _detectedPlatform == ProblemPlatform.baekjoon
+                ? 'Import Baekjoon Problem'
+                : 'Import Problem'),
         actions: [
           IconButton(
             icon: const Icon(Icons.help_outline),
@@ -162,6 +201,49 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // URL Input Field
+            TextFormField(
+              controller: _urlController,
+              decoration: InputDecoration(
+                labelText: 'Problem URL or ID',
+                hintText: 'https://acmicpc.net/problem/1000 or https://leetcode.com/problems/two-sum',
+                prefixIcon: const Icon(Icons.link),
+                suffixIcon: _detectedPlatform != null
+                    ? Icon(
+                        _detectedPlatform == ProblemPlatform.baekjoon
+                            ? Icons.check_circle
+                            : Icons.code,
+                        color: CandyColors.blue,
+                      )
+                    : null,
+              ),
+              onChanged: _handleUrlChange,
+            ),
+            if (_helpText != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: CandyColors.success.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: CandyColors.success.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.lightbulb_outline, color: CandyColors.success, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _helpText!,
+                        style: TextStyle(color: CandyColors.success, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+
             // Info banner
             Container(
               padding: const EdgeInsets.all(16),
@@ -176,7 +258,7 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Manually enter Baekjoon problem details. Visit acmicpc.net to copy the problem information.',
+                      'Paste a problem URL above, or manually enter details. Supports Baekjoon (acmicpc.net) and LeetCode.',
                       style: TextStyle(color: CandyColors.blue),
                     ),
                   ),
@@ -195,9 +277,9 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
               height: 100,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                itemCount: BaekjoonService.getCommonTemplates().length,
+                itemCount: _importService.getTemplates(_detectedPlatform).length,
                 itemBuilder: (context, index) {
-                  final template = BaekjoonService.getCommonTemplates()[index];
+                  final template = _importService.getTemplates(_detectedPlatform)[index];
                   return GestureDetector(
                     onTap: () => _useTemplate(template),
                     child: Container(
@@ -246,28 +328,23 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _problemIdController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Problem ID',
-                hintText: 'e.g., 1000',
-                prefixIcon: Icon(Icons.tag),
+                hintText: _detectedPlatform == ProblemPlatform.leetcode
+                    ? 'e.g., two-sum'
+                    : 'e.g., 1000',
+                prefixIcon: const Icon(Icons.tag),
               ),
-              keyboardType: TextInputType.number,
+              keyboardType: _detectedPlatform == ProblemPlatform.leetcode
+                  ? TextInputType.text
+                  : TextInputType.number,
               validator: (value) {
                 if (value == null || value.isEmpty) {
                   return 'Please enter problem ID';
                 }
-                if (!BaekjoonService.isValidProblemId(value)) {
-                  return 'Invalid problem ID';
-                }
                 return null;
               },
-              onChanged: (value) {
-                if (value.isNotEmpty) {
-                  setState(() {
-                    _selectedDifficulty = BaekjoonService.suggestDifficulty(value);
-                  });
-                }
-              },
+              enabled: _urlController.text.isEmpty,
             ),
             const SizedBox(height: 16),
 
@@ -314,7 +391,7 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
                       labelText: 'Topic',
                       prefixIcon: Icon(Icons.category),
                     ),
-                    items: BaekjoonService.getTopicSuggestions()
+                    items: _importService.getTopicSuggestions(_detectedPlatform)
                         .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                         .toList(),
                     onChanged: (value) {
@@ -326,17 +403,39 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Description
+            // Description with Language Toggle
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Description',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'EN', label: Text('EN')),
+                    ButtonSegment(value: 'KR', label: Text('KR')),
+                  ],
+                  selected: {_selectedLanguage},
+                  onSelectionChanged: (Set<String> selected) {
+                    setState(() {
+                      _selectedLanguage = selected.first;
+                    });
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             TextFormField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Description',
-                hintText: 'Problem description...',
-                prefixIcon: Icon(Icons.description),
+              controller: _selectedLanguage == 'EN' ? _descriptionController : _descriptionKoController,
+              decoration: InputDecoration(
+                labelText: _selectedLanguage == 'EN' ? 'Description (English)' : '설명 (한국어)',
+                hintText: _selectedLanguage == 'EN' ? 'Problem description...' : '문제 설명...',
+                prefixIcon: const Icon(Icons.description),
               ),
               maxLines: 4,
               validator: (value) {
-                if (value == null || value.isEmpty) {
+                if (_selectedLanguage == 'EN' && (value == null || value.isEmpty)) {
                   return 'Please enter description';
                 }
                 return null;
@@ -344,41 +443,48 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Input Format
-            TextFormField(
-              controller: _inputFormatController,
-              decoration: const InputDecoration(
-                labelText: 'Input Format',
-                hintText: 'Describe the input format...',
-                prefixIcon: Icon(Icons.input),
+            // Conditional fields based on platform
+            if (_detectedPlatform == ProblemPlatform.baekjoon || _detectedPlatform == null) ...[
+              // Input Format (Baekjoon)
+              TextFormField(
+                controller: _inputFormatController,
+                decoration: const InputDecoration(
+                  labelText: 'Input Format',
+                  hintText: 'Describe the input format...',
+                  prefixIcon: Icon(Icons.input),
+                ),
+                maxLines: 3,
               ),
-              maxLines: 3,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter input format';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-            // Output Format
-            TextFormField(
-              controller: _outputFormatController,
-              decoration: const InputDecoration(
-                labelText: 'Output Format',
-                hintText: 'Describe the output format...',
-                prefixIcon: Icon(Icons.output),
+              // Output Format (Baekjoon)
+              TextFormField(
+                controller: _outputFormatController,
+                decoration: const InputDecoration(
+                  labelText: 'Output Format',
+                  hintText: 'Describe the output format...',
+                  prefixIcon: Icon(Icons.output),
+                ),
+                maxLines: 3,
               ),
-              maxLines: 3,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter output format';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 16),
+            ],
+
+            if (_detectedPlatform == ProblemPlatform.leetcode) ...[
+              // Constraints (LeetCode)
+              TextFormField(
+                controller: _constraintsController,
+                decoration: const InputDecoration(
+                  labelText: 'Constraints',
+                  hintText: 'e.g., 1 <= n <= 10^5',
+                  prefixIcon: Icon(Icons.rule),
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            const SizedBox(height: 8),
 
             // Sample Cases
             Row(
@@ -493,15 +599,23 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('1. Visit acmicpc.net and find a problem'),
+              Text('Import from URL:', style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
-              Text('2. Copy the problem ID from the URL'),
+              Text('1. Copy the problem URL from Baekjoon (acmicpc.net) or LeetCode'),
               SizedBox(height: 8),
-              Text('3. Fill in the problem details manually'),
+              Text('2. Paste it in the "Problem URL or ID" field'),
               SizedBox(height: 8),
-              Text('4. Add sample test cases'),
+              Text('3. The app will detect the platform and pre-fill some fields'),
               SizedBox(height: 8),
-              Text('5. Click Import to save'),
+              Text('4. Fill in remaining details manually'),
+              SizedBox(height: 16),
+              Text('Manual Import:', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(height: 8),
+              Text('1. Enter problem ID directly'),
+              SizedBox(height: 8),
+              Text('2. Fill in title, description, and test cases'),
+              SizedBox(height: 8),
+              Text('3. Toggle EN/KR for bilingual support'),
               SizedBox(height: 16),
               Text(
                 'Tip: Use quick templates to get started faster!',
