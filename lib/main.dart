@@ -14,6 +14,7 @@ import 'screens/mock_test_screen.dart';
 import 'screens/leaderboard_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/learning_paths_screen.dart';
+import 'screens/settings_screen.dart';
 import 'l10n/app_localizations.dart';
 import 'providers/locale_provider.dart';
 import 'dart:math';
@@ -121,9 +122,10 @@ class _MainScreenState extends State<MainScreen> {
       );
     }
 
+    Widget currentView;
     switch (_currentIndex) {
       case 0:
-        return DashboardScreen(
+        currentView = DashboardScreen(
           user: _user,
           recentSubmissions: _submissions,
           solvedCount: _solvedCount,
@@ -133,15 +135,23 @@ class _MainScreenState extends State<MainScreen> {
           onLeaderboardPressed: () => _showLeaderboard(),
           onProfilePressed: () => _showProfile(),
         );
+        break;
       case 1:
-        return _buildPracticeView();
+        currentView = _buildPracticeView();
+        break;
       case 2:
-        return _buildMockTestView();
+        currentView = _buildMockTestView();
+        break;
       case 3:
-        return const LearningPathsScreen();
+        currentView = const LearningPathsScreen();
+        break;
       default:
-        return const SizedBox.shrink();
+        currentView = const SizedBox.shrink();
     }
+
+    return SafeArea(
+      child: currentView,
+    );
   }
 
   Widget _buildPracticeView() {
@@ -151,26 +161,60 @@ class _MainScreenState extends State<MainScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              'Pick a Challenge',
-              style: Theme.of(context).textTheme.displaySmall,
+            Expanded(
+              child: Text(
+                'Pick a Challenge',
+                style: Theme.of(context).textTheme.displaySmall,
+              ),
             ),
-            ElevatedButton.icon(
-              onPressed: _openImportScreen,
-              icon: const Icon(Icons.add, size: 20),
-              label: const Text('Import'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: CandyColors.blue,
-                foregroundColor: Colors.white,
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 48, // Touch-friendly button size
+              child: ElevatedButton.icon(
+                onPressed: _openImportScreen,
+                icon: const Icon(Icons.add, size: 20),
+                label: const Text('Import'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: CandyColors.blue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
               ),
             ),
           ],
         ),
         const SizedBox(height: 24),
-        ..._problems.map((problem) => _ProblemCard(
-              problem: problem,
-              onTap: () => _openProblem(problem),
-            )),
+        if (_problems.isEmpty)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.inbox_outlined,
+                    size: 64,
+                    color: CandyColors.textLight,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No problems yet',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Import some problems to get started!',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          ..._problems.map((problem) => _ProblemCard(
+                problem: problem,
+                onTap: () => _openProblem(problem),
+              )),
       ],
     );
   }
@@ -247,9 +291,13 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
             ] else ...[
-              ElevatedButton(
-                onPressed: _startMockTest,
-                child: const Text('Start Mock Test'),
+              SizedBox(
+                width: double.infinity,
+                height: 56, // Extra large touch target for important action
+                child: ElevatedButton(
+                  onPressed: _startMockTest,
+                  child: const Text('Start Mock Test'),
+                ),
               ),
             ],
           ],
@@ -474,45 +522,8 @@ class _MainScreenState extends State<MainScreen> {
           ],
         ),
         actions: [
-          // Language switcher
-          Consumer<LocaleProvider>(
-            builder: (context, localeProvider, child) {
-              return IconButton(
-                icon: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: CandyColors.blue.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: CandyColors.blue.withValues(alpha: 0.3)),
-                  ),
-                  child: Text(
-                    localeProvider.locale.languageCode.toUpperCase(),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                      color: CandyColors.blue,
-                    ),
-                  ),
-                ),
-                onPressed: () {
-                  localeProvider.toggleLocale();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        localeProvider.locale.languageCode == 'ko'
-                            ? '언어가 한국어로 변경되었습니다'
-                            : 'Language changed to English',
-                      ),
-                      duration: const Duration(seconds: 1),
-                      backgroundColor: CandyColors.blue,
-                    ),
-                  );
-                },
-              );
-            },
-          ),
           Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8),
+            margin: const EdgeInsets.only(right: 8),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: CandyColors.yellow.withValues(alpha: 0.3),
@@ -532,6 +543,21 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () async {
+              final result = await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => SettingsScreen(user: _user),
+                ),
+              );
+
+              // Reload data if profile was updated
+              if (result == true) {
+                await _loadData();
+              }
+            },
           ),
         ],
       ),
@@ -575,38 +601,52 @@ class _ProblemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.all(16),
-        decoration: CandyTheme.cardDecoration,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                CandyTheme.difficultyBadge(problem.difficulty),
-                Text(
-                  problem.topic,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              problem.title,
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 8),
-            const Row(
-              children: [
-                Icon(Icons.chevron_right, color: CandyColors.textLight),
-              ],
-            ),
-          ],
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(20), // Larger padding for touch
+          constraints: const BoxConstraints(
+            minHeight: 100, // Minimum touch-friendly height
+          ),
+          decoration: CandyTheme.cardDecoration,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  CandyTheme.difficultyBadge(problem.difficulty),
+                  Text(
+                    problem.topic,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                problem.title,
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              const SizedBox(height: 8),
+              const Row(
+                children: [
+                  Icon(Icons.chevron_right, color: CandyColors.textLight),
+                  SizedBox(width: 4),
+                  Text(
+                    'Tap to solve',
+                    style: TextStyle(
+                      color: CandyColors.textLight,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -630,70 +670,38 @@ class _CodeEditorWithLineNumbers extends StatefulWidget {
 
 class _CodeEditorWithLineNumbersState extends State<_CodeEditorWithLineNumbers> {
   final ScrollController _scrollController = ScrollController();
-  final ScrollController _lineNumberScrollController = ScrollController();
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_syncScroll);
-  }
 
   @override
   void dispose() {
-    _scrollController.removeListener(_syncScroll);
     _scrollController.dispose();
-    _lineNumberScrollController.dispose();
     super.dispose();
-  }
-
-  void _syncScroll() {
-    if (_lineNumberScrollController.hasClients) {
-      _lineNumberScrollController.jumpTo(_scrollController.offset);
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final lines = widget.controller.text.isEmpty
-        ? widget.placeholder.split('\n')
-        : widget.controller.text.split('\n');
-    final lineCount = lines.length;
+    final lineCount = '\n'.allMatches(widget.controller.text).length + 1;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Line numbers
+        // Line numbers column
         Container(
-          width: 50,
-          decoration: const BoxDecoration(
-            color: Color(0xFF1E1F26),
-            border: Border(
-              right: BorderSide(
-                color: Color(0xFF44475A),
-                width: 1,
-              ),
-            ),
-          ),
-          child: SingleChildScrollView(
-            controller: _lineNumberScrollController,
-            physics: const NeverScrollableScrollPhysics(),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: List.generate(
-                  lineCount > 0 ? lineCount : 1,
-                  (index) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      '${index + 1}',
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 13,
-                        color: Color(0xFF6272A4),
-                        height: 1.5,
-                      ),
-                    ),
+          width: 45,
+          color: const Color(0xFF21222C),
+          padding: const EdgeInsets.only(top: 16, right: 8, left: 8, bottom: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: List.generate(
+              lineCount > 0 ? lineCount : 1,
+              (i) => SizedBox(
+                height: 21,
+                child: Text(
+                  '${i + 1}',
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 14,
+                    color: Color(0xFF6272A4),
+                    height: 1.5,
                   ),
                 ),
               ),
@@ -701,36 +709,35 @@ class _CodeEditorWithLineNumbersState extends State<_CodeEditorWithLineNumbers> 
           ),
         ),
 
-        // Code editor
+        // Code editor - directly editable
         Expanded(
           child: SingleChildScrollView(
             controller: _scrollController,
-            padding: const EdgeInsets.all(16),
             child: TextField(
               controller: widget.controller,
               maxLines: null,
+              keyboardType: TextInputType.multiline,
               style: const TextStyle(
                 fontFamily: 'monospace',
-                fontSize: 13,
-                color: Color(0xFFF8F8F2), // Dracula foreground
+                fontSize: 14,
+                color: Color(0xFFF8F8F2),
                 height: 1.5,
               ),
               decoration: InputDecoration(
+                contentPadding: const EdgeInsets.all(16),
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
                 hintText: widget.placeholder,
                 hintStyle: const TextStyle(
-                  color: Color(0xFF6272A4), // Dracula comment color
                   fontFamily: 'monospace',
-                  fontSize: 13,
+                  fontSize: 14,
+                  color: Color(0xFF6272A4),
                   height: 1.5,
                 ),
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
               ),
-              cursorColor: const Color(0xFFFF79C6), // Dracula pink
-              onChanged: (value) {
-                setState(() {}); // Refresh to update line numbers
-              },
+              cursorColor: const Color(0xFFFF79C6),
+              onChanged: (_) => setState(() {}), // Update line numbers
             ),
           ),
         ),
@@ -755,6 +762,7 @@ class ProblemDetailScreen extends StatefulWidget {
 
 class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
   String _language = 'JavaScript';
+  String _descriptionLanguage = 'en'; // 'en' or 'ko' for problem description
   late TextEditingController _codeController;
 
   @override
@@ -786,10 +794,6 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
     }
   }
 
-  String _getLanguageDisplayName(String language) {
-    return language;
-  }
-
   String _getPlaceholderCode(String language) {
     switch (language) {
       case 'JavaScript':
@@ -807,145 +811,175 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.problem.title),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: CandyTheme.cardDecoration,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    CandyTheme.difficultyBadge(widget.problem.difficulty),
-                    const Spacer(),
-                    DropdownButton<String>(
-                      value: _language,
-                      items: ['JavaScript', 'Python', 'C++', 'Java']
-                          .map((lang) => DropdownMenuItem(
-                                value: lang,
-                                child: Text(lang),
-                              ))
-                          .toList(),
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() {
-                            _language = value;
-                            _codeController.text =
-                                widget.problem.templates[value] ?? '';
-                          });
-                        }
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  widget.problem.description,
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-              ],
-            ),
+      body: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: keyboardHeight > 0 ? keyboardHeight + 16 : 16,
           ),
-          const SizedBox(height: 24),
-          Text(
-            'Your Solution',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-          const SizedBox(height: 16),
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF282A36),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: CandyColors.blue.withValues(alpha: 0.3),
-                width: 2,
-              ),
-            ),
-            child: Column(
-              children: [
-                // Editor toolbar
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF1E1F26),
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(14),
-                      topRight: Radius.circular(14),
-                    ),
-                  ),
-                  child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: CandyTheme.cardDecoration,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      const Icon(Icons.code, size: 16, color: Colors.white54),
-                      const SizedBox(width: 8),
-                      Text(
-                        _getLanguageDisplayName(_language),
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      CandyTheme.difficultyBadge(widget.problem.difficulty),
                       const Spacer(),
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF50FA7B),
-                          shape: BoxShape.circle,
+                      // Problem description language switcher
+                      if (widget.problem.descriptionKo != null)
+                        Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: CandyColors.blue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: CandyColors.blue.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _LanguageButton(
+                                label: 'EN',
+                                isSelected: _descriptionLanguage == 'en',
+                                onTap: () {
+                                  setState(() => _descriptionLanguage = 'en');
+                                },
+                              ),
+                              _LanguageButton(
+                                label: 'KO',
+                                isSelected: _descriptionLanguage == 'ko',
+                                onTap: () {
+                                  setState(() => _descriptionLanguage = 'ko');
+                                },
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Ready',
-                        style: TextStyle(
-                          color: Colors.white54,
-                          fontSize: 11,
-                        ),
+                      DropdownButton<String>(
+                        value: _language,
+                        items: ['JavaScript', 'Python', 'C++', 'Java']
+                            .map((lang) => DropdownMenuItem(
+                                  value: lang,
+                                  child: Text(lang),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() {
+                              _language = value;
+                              _codeController.text =
+                                  widget.problem.templates[value] ?? '';
+                            });
+                          }
+                        },
                       ),
                     ],
                   ),
-                ),
-                // Code editor with line numbers
-                Container(
-                  constraints: const BoxConstraints(
-                    minHeight: 300,
-                    maxHeight: 500,
+                  const SizedBox(height: 16),
+                  Text(
+                    _descriptionLanguage == 'ko' && widget.problem.descriptionKo != null
+                        ? widget.problem.descriptionKo!
+                        : widget.problem.description,
+                    style: Theme.of(context).textTheme.bodyLarge,
                   ),
-                  child: _CodeEditorWithLineNumbers(
-                    controller: _codeController,
-                    language: _getHighlightLanguage(_language),
-                    placeholder: _getPlaceholderCode(_language),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
+            const SizedBox(height: 24),
+            Text(
+              'Your Solution',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 16),
+            // Mobile-optimized code editor
+            Container(
+              height: screenHeight * 0.4, // 40% of screen height
+              decoration: BoxDecoration(
+                color: const Color(0xFF282A36),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: _CodeEditorWithLineNumbers(
+                controller: _codeController,
+                language: _getHighlightLanguage(_language),
+                placeholder: _getPlaceholderCode(_language),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 48, // Minimum touch target size
+              child: ElevatedButton(
+                onPressed: () async {
+                  // Dismiss keyboard before submitting
+                  FocusScope.of(context).unfocus();
+
+                  await widget.onSubmit(
+                    widget.problem.id,
+                    _language,
+                    _codeController.text,
+                  );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Solution submitted successfully!'),
+                      ),
+                    );
+                    Navigator.of(context).pop();
+                  }
+                },
+                child: const Text('Submit Solution'),
+              ),
+            ),
+            const SizedBox(height: 100), // Extra space for scrolling past keyboard
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LanguageButton extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _LanguageButton({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? CandyColors.blue
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+            color: isSelected ? Colors.white : CandyColors.blue,
           ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () async {
-              await widget.onSubmit(
-                widget.problem.id,
-                _language,
-                _codeController.text,
-              );
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Solution submitted successfully!'),
-                  ),
-                );
-                Navigator.of(context).pop();
-              }
-            },
-            child: const Text('Submit Solution'),
-          ),
-        ],
+        ),
       ),
     );
   }

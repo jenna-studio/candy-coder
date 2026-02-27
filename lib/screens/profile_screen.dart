@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import '../models/user.dart';
 import '../models/submission.dart';
 import '../models/problem.dart';
@@ -224,14 +225,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
             height: 100,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
+              color: CandyColors.pink,
               border: Border.all(
                 color: Colors.white,
                 width: 4,
               ),
-              image: DecorationImage(
-                image: NetworkImage(widget.user.avatar),
-                fit: BoxFit.cover,
-              ),
+            ),
+            child: ClipOval(
+              child: widget.user.avatar.isEmpty
+                  ? Center(
+                      child: Text(
+                        widget.user.name[0].toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 40,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  : (widget.user.avatar.startsWith('http')
+                      ? Image.network(
+                          widget.user.avatar,
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Center(
+                              child: Text(
+                                widget.user.name[0].toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 40,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      : File(widget.user.avatar).existsSync()
+                          ? Image.file(
+                              File(widget.user.avatar),
+                              width: 100,
+                              height: 100,
+                              fit: BoxFit.cover,
+                            )
+                          : Center(
+                              child: Text(
+                                widget.user.name[0].toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 40,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            )),
             ),
           ),
           const SizedBox(height: 16),

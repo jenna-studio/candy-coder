@@ -5,6 +5,12 @@ class User {
   final int points;
   final int streak;
   final String lastSubmissionDate;
+  final String? bio;
+  final String? organization;
+  final int? level;
+  final String? github;
+  final String? linkedin;
+  final String? instagram;
 
   User({
     required this.id,
@@ -13,6 +19,12 @@ class User {
     required this.points,
     required this.streak,
     required this.lastSubmissionDate,
+    this.bio,
+    this.organization,
+    this.level,
+    this.github,
+    this.linkedin,
+    this.instagram,
   });
 
   factory User.fromMap(Map<String, dynamic> map) {
@@ -23,6 +35,12 @@ class User {
       points: map['points'] as int,
       streak: map['streak'] as int,
       lastSubmissionDate: map['last_submission_date'] as String,
+      bio: map['bio'] as String?,
+      organization: map['organization'] as String?,
+      level: map['level'] as int?,
+      github: map['github'] as String?,
+      linkedin: map['linkedin'] as String?,
+      instagram: map['instagram'] as String?,
     );
   }
 
@@ -34,6 +52,12 @@ class User {
       'points': points,
       'streak': streak,
       'last_submission_date': lastSubmissionDate,
+      'bio': bio,
+      'organization': organization,
+      'level': level,
+      'github': github,
+      'linkedin': linkedin,
+      'instagram': instagram,
     };
   }
 
@@ -44,6 +68,12 @@ class User {
     int? points,
     int? streak,
     String? lastSubmissionDate,
+    String? bio,
+    String? organization,
+    int? level,
+    String? github,
+    String? linkedin,
+    String? instagram,
   }) {
     return User(
       id: id ?? this.id,
@@ -52,6 +82,12 @@ class User {
       points: points ?? this.points,
       streak: streak ?? this.streak,
       lastSubmissionDate: lastSubmissionDate ?? this.lastSubmissionDate,
+      bio: bio ?? this.bio,
+      organization: organization ?? this.organization,
+      level: level ?? this.level,
+      github: github ?? this.github,
+      linkedin: linkedin ?? this.linkedin,
+      instagram: instagram ?? this.instagram,
     );
   }
 }

@@ -56,6 +56,9 @@ dependencies:
   provider: ^6.1.1
   shared_preferences: ^2.2.2
 
+  # Image picker
+  image_picker: ^1.0.7
+
   # Animations
   animations: ^2.0.8
 

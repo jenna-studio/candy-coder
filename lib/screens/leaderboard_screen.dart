@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import '../models/user.dart';
 import '../services/database_service.dart';
 import '../theme/candy_theme.dart';
@@ -224,14 +225,56 @@ class _PodiumPlace extends StatelessWidget {
           height: rank == 1 ? 80 : 64,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
+            color: CandyColors.pink,
             border: Border.all(
               color: color,
               width: 3,
             ),
-            image: DecorationImage(
-              image: NetworkImage(user.avatar),
-              fit: BoxFit.cover,
-            ),
+          ),
+          child: ClipOval(
+            child: user.avatar.isEmpty
+                ? Center(
+                    child: Text(
+                      user.name[0].toUpperCase(),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: rank == 1 ? 32 : 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  )
+                : (user.avatar.startsWith('http')
+                    ? Image.network(
+                        user.avatar,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Center(
+                            child: Text(
+                              user.name[0].toUpperCase(),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: rank == 1 ? 32 : 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          );
+                        },
+                      )
+                    : File(user.avatar).existsSync()
+                        ? Image.file(
+                            File(user.avatar),
+                            fit: BoxFit.cover,
+                          )
+                        : Center(
+                            child: Text(
+                              user.name[0].toUpperCase(),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: rank == 1 ? 32 : 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          )),
           ),
         ),
         const SizedBox(height: 8),
@@ -358,14 +401,56 @@ class _LeaderboardCard extends StatelessWidget {
             height: 48,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
+              color: CandyColors.pink,
               border: Border.all(
                 color: isCurrentUser ? CandyColors.pink : Colors.transparent,
                 width: 2,
               ),
-              image: DecorationImage(
-                image: NetworkImage(user.avatar),
-                fit: BoxFit.cover,
-              ),
+            ),
+            child: ClipOval(
+              child: user.avatar.isEmpty
+                  ? Center(
+                      child: Text(
+                        user.name[0].toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  : (user.avatar.startsWith('http')
+                      ? Image.network(
+                          user.avatar,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Center(
+                              child: Text(
+                                user.name[0].toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      : File(user.avatar).existsSync()
+                          ? Image.file(
+                              File(user.avatar),
+                              fit: BoxFit.cover,
+                            )
+                          : Center(
+                              child: Text(
+                                user.name[0].toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            )),
             ),
           ),
 

@@ -24,7 +24,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -69,7 +69,13 @@ class DatabaseService {
         avatar TEXT,
         points INTEGER,
         streak INTEGER,
-        last_submission_date TEXT
+        last_submission_date TEXT,
+        bio TEXT,
+        organization TEXT,
+        level INTEGER,
+        github TEXT,
+        linkedin TEXT,
+        instagram TEXT
       )
     ''');
 
@@ -223,6 +229,15 @@ class DatabaseService {
       await db.execute('ALTER TABLE submissions ADD COLUMN exitCode INTEGER');
       await db.execute('ALTER TABLE submissions ADD COLUMN passedTestCases INTEGER');
       await db.execute('ALTER TABLE submissions ADD COLUMN totalTestCases INTEGER');
+    }
+    if (oldVersion < 3) {
+      // Add new columns to users table for profile information
+      await db.execute('ALTER TABLE users ADD COLUMN bio TEXT');
+      await db.execute('ALTER TABLE users ADD COLUMN organization TEXT');
+      await db.execute('ALTER TABLE users ADD COLUMN level INTEGER');
+      await db.execute('ALTER TABLE users ADD COLUMN github TEXT');
+      await db.execute('ALTER TABLE users ADD COLUMN linkedin TEXT');
+      await db.execute('ALTER TABLE users ADD COLUMN instagram TEXT');
     }
   }
 
