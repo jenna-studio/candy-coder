@@ -1,18 +1,389 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../models/problem.dart';
 
-/// Service for importing problems from LeetCode
-///
-/// Note: LeetCode has bot protection, so automated scraping is not possible.
-/// This service provides:
-/// 1. Manual problem entry with structured forms
-/// 2. Problem templates for common LeetCode problem types
-/// 3. Helper methods to format problems correctly
-/// 4. Support for both English and Korean descriptions
+/// Service for fetching problems from LeetCode via GraphQL API
 class LeetCodeService {
-  /// Creates a problem from manual entry data
+  static const String _graphqlUrl = 'https://leetcode.com/graphql';
+
+  /// Fetch a list of problems from LeetCode
   ///
-  /// This method helps structure manually entered LeetCode problems
-  /// into the app's Problem model format.
+  /// Parameters:
+  /// - [limit]: Maximum number of problems to fetch (default: 50)
+  /// - [skip]: Number of problems to skip for pagination (default: 0)
+  /// - [difficulty]: Filter by difficulty ('EASY', 'MEDIUM', 'HARD', or null for all)
+  ///
+  /// Returns a list of Problem objects
+  static Future<List<Problem>> fetchProblems({
+    int limit = 50,
+    int skip = 0,
+    String? difficulty,
+  }) async {
+    try {
+      // GraphQL query to fetch problem list
+      final query = '''
+        query problemsetQuestionList(\$categorySlug: String, \$limit: Int, \$skip: Int, \$filters: QuestionListFilterInput) {
+          problemsetQuestionList: questionList(
+            categorySlug: \$categorySlug
+            limit: \$limit
+            skip: \$skip
+            filters: \$filters
+          ) {
+            total: totalNum
+            questions: data {
+              questionId
+              questionFrontendId
+              title
+              titleSlug
+              difficulty
+              isPaidOnly
+              topicTags {
+                name
+                slug
+              }
+              acRate
+            }
+          }
+        }
+      ''';
+
+      final variables = {
+        'categorySlug': '',
+        'skip': skip,
+        'limit': limit,
+        'filters': difficulty != null
+            ? {'difficulty': difficulty}
+            : {},
+      };
+
+      final response = await http.post(
+        Uri.parse(_graphqlUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Referer': 'https://leetcode.com',
+        },
+        body: jsonEncode({
+          'query': query,
+          'variables': variables,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data['errors'] != null) {
+          throw Exception('GraphQL Error: ${data['errors']}');
+        }
+
+        final questions = data['data']?['problemsetQuestionList']?['questions'] as List?;
+        if (questions == null) {
+          return [];
+        }
+
+        final problems = <Problem>[];
+        for (var q in questions) {
+          // Skip paid-only problems
+          if (q['isPaidOnly'] == true) continue;
+
+          try {
+            final problem = await _convertToProblem(q);
+            if (problem != null) {
+              problems.add(problem);
+              // Add delay to avoid rate limiting
+              await Future.delayed(const Duration(milliseconds: 200));
+            }
+          } catch (e) {
+            print('Error converting problem ${q['title']}: $e');
+            continue;
+          }
+        }
+
+        return problems;
+      } else {
+        throw Exception('Failed to fetch problems: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Error fetching LeetCode problems: $e');
+    }
+  }
+
+  /// Fetch a single problem with detailed information
+  static Future<Problem?> fetchProblemBySlug(String titleSlug) async {
+    try {
+      final query = '''
+        query questionData(\$titleSlug: String!) {
+          question(titleSlug: \$titleSlug) {
+            questionId
+            questionFrontendId
+            title
+            titleSlug
+            content
+            difficulty
+            topicTags {
+              name
+              slug
+            }
+            codeSnippets {
+              lang
+              langSlug
+              code
+            }
+            sampleTestCase
+            exampleTestcases
+          }
+        }
+      ''';
+
+      final response = await http.post(
+        Uri.parse(_graphqlUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Referer': 'https://leetcode.com',
+        },
+        body: jsonEncode({
+          'query': query,
+          'variables': {'titleSlug': titleSlug},
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data['errors'] != null) {
+          print('GraphQL Error for $titleSlug: ${data['errors']}');
+          return null;
+        }
+
+        final question = data['data']?['question'];
+
+        if (question == null) return null;
+
+        return _convertDetailedToProblem(question);
+      }
+      return null;
+    } catch (e) {
+      print('Error fetching problem details for $titleSlug: $e');
+      return null;
+    }
+  }
+
+  /// Convert LeetCode question to our Problem model (basic info)
+  static Future<Problem?> _convertToProblem(Map<String, dynamic> q) async {
+    try {
+      final titleSlug = q['titleSlug'] as String;
+
+      // Fetch detailed info to get description and code snippets
+      final detailedProblem = await fetchProblemBySlug(titleSlug);
+      return detailedProblem;
+    } catch (e) {
+      print('Error converting problem ${q['title']}: $e');
+      return null;
+    }
+  }
+
+  /// Convert detailed LeetCode question to our Problem model
+  static Problem _convertDetailedToProblem(Map<String, dynamic> q) {
+    final questionId = q['questionFrontendId'].toString();
+    final title = q['title'] as String;
+    final difficulty = q['difficulty'] as String;
+
+    // Extract topics (use first topic as main category, or 'Array' as default)
+    final topics = (q['topicTags'] as List?)
+        ?.map((t) => t['name'] as String)
+        .toList() ?? [];
+    final mainTopic = topics.isNotEmpty ? topics.first : 'Array';
+
+    // Clean HTML description
+    String description = q['content'] as String? ?? 'No description available';
+    description = _cleanHtml(description);
+
+    // Extract code templates
+    final codeSnippets = (q['codeSnippets'] as List?) ?? [];
+    final templates = <String, String>{};
+
+    for (var snippet in codeSnippets) {
+      final lang = snippet['lang'] as String;
+      final code = snippet['code'] as String;
+
+      // Map LeetCode language names to our format
+      if (lang == 'JavaScript' || lang == 'TypeScript') {
+        templates['JavaScript'] = code;
+      } else if (lang == 'Python' || lang == 'Python3') {
+        templates['Python'] = code;
+      } else if (lang == 'C++') {
+        templates['C++'] = code;
+      } else if (lang == 'Java') {
+        templates['Java'] = code;
+      }
+    }
+
+    // Ensure we have at least basic templates
+    if (templates.isEmpty) {
+      templates['JavaScript'] = '// Write your solution here';
+      templates['Python'] = '# Write your solution here';
+      templates['C++'] = '// Write your solution here';
+      templates['Java'] = '// Write your solution here';
+    }
+
+    // Create basic test cases from sample test case
+    final testCases = <TestCase>[];
+    final sampleTest = q['sampleTestCase'] as String?;
+    final exampleTests = q['exampleTestcases'] as String?;
+
+    if (sampleTest != null && sampleTest.isNotEmpty) {
+      testCases.add(TestCase(
+        input: sampleTest,
+        expectedOutput: 'See problem examples',
+      ));
+    }
+
+    // If we have example test cases, try to parse them
+    if (exampleTests != null && exampleTests.isNotEmpty) {
+      final examples = exampleTests.split('\n');
+      for (var example in examples.take(2)) {
+        if (example.trim().isNotEmpty) {
+          testCases.add(TestCase(
+            input: example.trim(),
+            expectedOutput: 'See problem examples',
+          ));
+        }
+      }
+    }
+
+    // Ensure at least one test case exists
+    if (testCases.isEmpty) {
+      testCases.add(TestCase(
+        input: '',
+        expectedOutput: 'See problem examples',
+      ));
+    }
+
+    return Problem(
+      id: 'leetcode_$questionId',
+      title: '$questionId. $title',
+      topic: mainTopic,
+      difficulty: difficulty == 'Easy' ? 'Easy' : (difficulty == 'Hard' ? 'Hard' : 'Medium'),
+      description: description,
+      templates: templates,
+      testCases: testCases,
+    );
+  }
+
+  /// Clean HTML tags from description
+  static String _cleanHtml(String html) {
+    // Remove HTML tags
+    String cleaned = html.replaceAll(RegExp(r'<[^>]*>'), ' ');
+
+    // Decode HTML entities
+    cleaned = cleaned
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&ldquo;', '"')
+        .replaceAll('&rdquo;', '"')
+        .replaceAll('&ndash;', '-')
+        .replaceAll('&mdash;', '-');
+
+    // Clean up excessive whitespace
+    cleaned = cleaned
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'\n\s*\n\s*\n'), '\n\n')
+        .trim();
+
+    return cleaned;
+  }
+
+  /// Get available difficulty levels
+  static List<String> getDifficultyLevels() {
+    return ['EASY', 'MEDIUM', 'HARD'];
+  }
+
+  /// Get available topic categories
+  static List<String> getTopicCategories() {
+    return [
+      'Array',
+      'String',
+      'Hash Table',
+      'Dynamic Programming',
+      'Math',
+      'Sorting',
+      'Greedy',
+      'Depth-First Search',
+      'Binary Search',
+      'Breadth-First Search',
+      'Tree',
+      'Two Pointers',
+      'Stack',
+      'Graph',
+      'Linked List',
+      'Backtracking',
+      'Heap',
+    ];
+  }
+
+  /// Alias for getTopicCategories for compatibility
+  static List<String> getTopicSuggestions() {
+    return getTopicCategories();
+  }
+
+  /// Suggest difficulty based on title (placeholder implementation)
+  static String suggestDifficulty(String title) {
+    // Simple heuristic: if title contains certain keywords, suggest difficulty
+    final lowerTitle = title.toLowerCase();
+    if (lowerTitle.contains('easy') || lowerTitle.contains('simple')) {
+      return 'Easy';
+    } else if (lowerTitle.contains('hard') || lowerTitle.contains('complex')) {
+      return 'Hard';
+    }
+    return 'Medium';
+  }
+
+  /// Validate if a problem ID is valid for LeetCode (slug format)
+  static bool isValidProblemId(String id) {
+    // LeetCode slugs are lowercase with hyphens, no spaces
+    return RegExp(r'^[a-z0-9\-]+$').hasMatch(id);
+  }
+
+  /// Get common problem templates
+  static List<ProblemTemplate> getCommonTemplates() {
+    return [
+      ProblemTemplate(
+        name: 'Two Sum',
+        description: 'Array & Hash Table',
+        difficulty: 'Easy',
+        topic: 'Array',
+        sampleTitle: 'Two Sum',
+        sampleDescription: 'Given an array of integers, return indices of the two numbers that add up to a specific target.',
+        sampleInput: '[2,7,11,15], target = 9',
+        sampleOutput: '[0,1]',
+      ),
+      ProblemTemplate(
+        name: 'Reverse String',
+        description: 'String manipulation',
+        difficulty: 'Easy',
+        topic: 'String',
+        sampleTitle: 'Reverse String',
+        sampleDescription: 'Write a function that reverses a string.',
+        sampleInput: 'hello',
+        sampleOutput: 'olleh',
+      ),
+      ProblemTemplate(
+        name: 'Max Subarray',
+        description: 'Dynamic Programming',
+        difficulty: 'Medium',
+        topic: 'Dynamic Programming',
+        sampleTitle: 'Maximum Subarray',
+        sampleDescription: 'Find the contiguous subarray with the largest sum.',
+        sampleInput: '[-2,1,-3,4,-1,2,1,-5,4]',
+        sampleOutput: '6',
+      ),
+    ];
+  }
+
+  /// Create a problem from manual entry
   Problem createProblemFromManualEntry({
     required String problemId,
     required String title,
@@ -20,20 +391,16 @@ class LeetCodeService {
     String? descriptionKo,
     String? constraints,
     required List<Map<String, String>> sampleCases,
-    String difficulty = 'Medium',
-    String topic = 'Algorithm',
+    required String difficulty,
+    required String topic,
   }) {
-    // Combine description with constraints
-    final fullDescriptionEn = '''
-$description
-
-${constraints != null ? '## Constraints\n$constraints\n' : ''}
-## Examples
-${_formatSampleCases(sampleCases)}
-''';
-
-    // Generate language templates
-    final templates = _generateTemplates(problemId, title);
+    // Create code templates
+    final templates = <String, String>{
+      'JavaScript': '// Write your solution here\nfunction solution() {\n    \n}',
+      'Python': '# Write your solution here\ndef solution():\n    pass',
+      'C++': '// Write your solution here\nclass Solution {\npublic:\n    \n};',
+      'Java': '// Write your solution here\nclass Solution {\n    \n}',
+    };
 
     // Convert sample cases to TestCase objects
     final testCases = sampleCases.map((sample) {
@@ -43,214 +410,26 @@ ${_formatSampleCases(sampleCases)}
       );
     }).toList();
 
+    // Append constraints to description if provided
+    String fullDescription = description;
+    if (constraints != null && constraints.isNotEmpty) {
+      fullDescription += '\n\nConstraints:\n$constraints';
+    }
+
     return Problem(
       id: 'leetcode_$problemId',
       title: title,
       topic: topic,
       difficulty: difficulty,
-      description: fullDescriptionEn,
+      description: fullDescription,
       descriptionKo: descriptionKo,
       templates: templates,
       testCases: testCases,
     );
   }
-
-  /// Formats sample cases for display
-  String _formatSampleCases(List<Map<String, String>> cases) {
-    final buffer = StringBuffer();
-    for (int i = 0; i < cases.length; i++) {
-      buffer.writeln('### Example ${i + 1}');
-      buffer.writeln('**Input:**');
-      buffer.writeln('```');
-      buffer.writeln(cases[i]['input'] ?? '');
-      buffer.writeln('```');
-      buffer.writeln('**Output:**');
-      buffer.writeln('```');
-      buffer.writeln(cases[i]['output'] ?? '');
-      buffer.writeln('```');
-      if (cases[i]['explanation'] != null) {
-        buffer.writeln('**Explanation:** ${cases[i]['explanation']}');
-      }
-      buffer.writeln();
-    }
-    return buffer.toString();
-  }
-
-  /// Generates code templates for different languages
-  Map<String, String> _generateTemplates(String problemId, String title) {
-    // Convert problem title to function name (e.g., "Two Sum" -> "twoSum")
-    final functionName = _titleToFunctionName(title);
-
-    return {
-      'JavaScript': '''/**
- * LeetCode Problem: $title
- * @param {any} input
- * @return {any}
- */
-function $functionName(input) {
-  // Write your code here
-
 }
 
-// Test
-console.log($functionName());''',
-      'Python': '''# LeetCode Problem: $title
-
-class Solution:
-    def $functionName(self, input):
-        """
-        :type input: any
-        :rtype: any
-        """
-        # Write your code here
-        pass
-
-# Test
-solution = Solution()
-print(solution.$functionName())''',
-      'C++': '''// LeetCode Problem: $title
-#include <iostream>
-#include <vector>
-#include <string>
-using namespace std;
-
-class Solution {
-public:
-    auto $functionName(auto input) {
-        // Write your code here
-
-    }
-};
-
-int main() {
-    Solution solution;
-    // Test your solution
-    return 0;
-}''',
-      'Java': '''// LeetCode Problem: $title
-import java.util.*;
-
-class Solution {
-    public Object $functionName(Object input) {
-        // Write your code here
-        return null;
-    }
-
-    public static void main(String[] args) {
-        Solution solution = new Solution();
-        // Test your solution
-    }
-}''',
-    };
-  }
-
-  /// Convert title to function name (e.g., "Two Sum" -> "twoSum")
-  String _titleToFunctionName(String title) {
-    final words = title.split(' ');
-    if (words.isEmpty) return 'solution';
-
-    return words[0].toLowerCase() +
-           words.skip(1).map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase()).join('');
-  }
-
-  /// Get problem templates for common LeetCode problem types
-  static List<ProblemTemplate> getCommonTemplates() {
-    return [
-      ProblemTemplate(
-        name: 'Array',
-        description: 'Array manipulation problems',
-        difficulty: 'Easy',
-        topic: 'Array',
-        sampleTitle: 'Two Sum',
-        sampleDescription: 'Given an array of integers nums and an integer target, return indices of the two numbers that add up to target.',
-        sampleInput: 'nums = [2,7,11,15], target = 9',
-        sampleOutput: '[0,1]',
-      ),
-      ProblemTemplate(
-        name: 'String',
-        description: 'String processing problems',
-        difficulty: 'Easy',
-        topic: 'String',
-        sampleTitle: 'Valid Palindrome',
-        sampleDescription: 'Given a string s, determine if it is a palindrome.',
-        sampleInput: 's = "A man, a plan, a canal: Panama"',
-        sampleOutput: 'true',
-      ),
-      ProblemTemplate(
-        name: 'Linked List',
-        description: 'Linked list manipulation',
-        difficulty: 'Medium',
-        topic: 'Linked List',
-        sampleTitle: 'Reverse Linked List',
-        sampleDescription: 'Given the head of a singly linked list, reverse the list.',
-        sampleInput: 'head = [1,2,3,4,5]',
-        sampleOutput: '[5,4,3,2,1]',
-      ),
-      ProblemTemplate(
-        name: 'Tree',
-        description: 'Binary tree problems',
-        difficulty: 'Medium',
-        topic: 'Tree',
-        sampleTitle: 'Maximum Depth',
-        sampleDescription: 'Find the maximum depth of a binary tree.',
-        sampleInput: 'root = [3,9,20,null,null,15,7]',
-        sampleOutput: '3',
-      ),
-      ProblemTemplate(
-        name: 'Dynamic Programming',
-        description: 'DP optimization problems',
-        difficulty: 'Hard',
-        topic: 'DP',
-        sampleTitle: 'Longest Increasing Subsequence',
-        sampleDescription: 'Find the length of the longest strictly increasing subsequence.',
-        sampleInput: 'nums = [10,9,2,5,3,7,101,18]',
-        sampleOutput: '4',
-      ),
-    ];
-  }
-
-  /// Validates if a problem ID is in correct LeetCode format
-  static bool isValidProblemId(String id) {
-    // LeetCode uses kebab-case slugs (e.g., "two-sum")
-    return RegExp(r'^[a-z0-9]+(-[a-z0-9]+)*$').hasMatch(id);
-  }
-
-  /// Get difficulty suggestion based on problem patterns
-  static String suggestDifficulty(String title) {
-    final lowerTitle = title.toLowerCase();
-
-    // Keywords that suggest difficulty
-    if (lowerTitle.contains('basic') || lowerTitle.contains('simple')) return 'Easy';
-    if (lowerTitle.contains('hard') || lowerTitle.contains('complex')) return 'Hard';
-    if (lowerTitle.contains('advanced') || lowerTitle.contains('optimal')) return 'Hard';
-
-    return 'Medium';
-  }
-
-  /// Get topic suggestions based on common LeetCode categories
-  static List<String> getTopicSuggestions() {
-    return [
-      'Array',
-      'String',
-      'Hash Table',
-      'Dynamic Programming',
-      'Math',
-      'Sorting',
-      'Greedy',
-      'Tree',
-      'Graph',
-      'Binary Search',
-      'Two Pointers',
-      'Stack',
-      'Queue',
-      'Linked List',
-      'Backtracking',
-      'Heap',
-    ];
-  }
-}
-
-/// Template for creating new problems quickly
+/// Template for creating new problems
 class ProblemTemplate {
   final String name;
   final String description;

@@ -3,6 +3,7 @@ import '../theme/candy_theme.dart';
 import '../services/problem_import_service.dart';
 import '../services/url_parser.dart';
 import '../services/database_service.dart';
+import 'leetcode_import_screen.dart';
 
 class ImportProblemScreen extends StatefulWidget {
   const ImportProblemScreen({super.key});
@@ -260,6 +261,78 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
                     child: Text(
                       'Paste a problem URL above, or manually enter details. Supports Baekjoon (acmicpc.net) and LeetCode.',
                       style: TextStyle(color: CandyColors.blue),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Bulk Import Button
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [CandyColors.purple, CandyColors.pink],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.cloud_download, color: Colors.white, size: 32),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Bulk Import from LeetCode',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Import multiple problems at once with filters',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final result = await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const LeetCodeImportScreen(),
+                          ),
+                        );
+                        if (result == true && mounted) {
+                          // Problems were imported successfully
+                          Navigator.of(context).pop(true);
+                        }
+                      },
+                      icon: const Icon(Icons.arrow_forward),
+                      label: const Text('Start Bulk Import'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: CandyColors.purple,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
                     ),
                   ),
                 ],
