@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
 import 'theme/candy_theme.dart';
 import 'services/database_service.dart';
 import 'services/piston_service.dart';
@@ -12,6 +14,8 @@ import 'screens/mock_test_screen.dart';
 import 'screens/leaderboard_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/learning_paths_screen.dart';
+import 'l10n/app_localizations.dart';
+import 'providers/locale_provider.dart';
 import 'dart:math';
 
 void main() async {
@@ -20,7 +24,12 @@ void main() async {
   // Initialize services
   await DatabaseService().database;
 
-  runApp(const CandyCoderApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => LocaleProvider(),
+      child: const CandyCoderApp(),
+    ),
+  );
 }
 
 class CandyCoderApp extends StatelessWidget {
@@ -28,11 +37,26 @@ class CandyCoderApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Candy Coder',
-      theme: CandyTheme.lightTheme,
-      home: const MainScreen(),
-      debugShowCheckedModeBanner: false,
+    return Consumer<LocaleProvider>(
+      builder: (context, localeProvider, child) {
+        return MaterialApp(
+          title: 'Candy Coder',
+          theme: CandyTheme.lightTheme,
+          home: const MainScreen(),
+          debugShowCheckedModeBanner: false,
+          locale: localeProvider.locale,
+          localizationsDelegates: const [
+            AppLocalizationsDelegate(),
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [
+            Locale('en', ''),
+            Locale('ko', ''),
+          ],
+        );
+      },
     );
   }
 }
@@ -450,6 +474,43 @@ class _MainScreenState extends State<MainScreen> {
           ],
         ),
         actions: [
+          // Language switcher
+          Consumer<LocaleProvider>(
+            builder: (context, localeProvider, child) {
+              return IconButton(
+                icon: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: CandyColors.blue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: CandyColors.blue.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    localeProvider.locale.languageCode.toUpperCase(),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: CandyColors.blue,
+                    ),
+                  ),
+                ),
+                onPressed: () {
+                  localeProvider.toggleLocale();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        localeProvider.locale.languageCode == 'ko'
+                            ? '언어가 한국어로 변경되었습니다'
+                            : 'Language changed to English',
+                      ),
+                      duration: const Duration(seconds: 1),
+                      backgroundColor: CandyColors.blue,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 8),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
