@@ -7,6 +7,7 @@ import 'models/user.dart';
 import 'models/problem.dart';
 import 'models/submission.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/import_problem_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -118,9 +119,23 @@ class _MainScreenState extends State<MainScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text(
-          'Pick a Challenge',
-          style: Theme.of(context).textTheme.displaySmall,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Pick a Challenge',
+              style: Theme.of(context).textTheme.displaySmall,
+            ),
+            ElevatedButton.icon(
+              onPressed: _openImportScreen,
+              icon: const Icon(Icons.add, size: 20),
+              label: const Text('Import'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: CandyColors.blue,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 24),
         ..._problems.map((problem) => _ProblemCard(
@@ -129,6 +144,19 @@ class _MainScreenState extends State<MainScreen> {
             )),
       ],
     );
+  }
+
+  Future<void> _openImportScreen() async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const ImportProblemScreen(),
+      ),
+    );
+
+    if (result == true) {
+      // Reload data if a problem was imported
+      await _loadData();
+    }
   }
 
   Widget _buildMockTestView() {
