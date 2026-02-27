@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_highlight/flutter_highlight.dart';
-import 'package:flutter_highlight/themes/dracula.dart';
 import 'theme/candy_theme.dart';
 import 'services/database_service.dart';
+import 'services/piston_service.dart';
 import 'models/user.dart';
 import 'models/problem.dart';
 import 'models/submission.dart';
+import 'models/mock_test.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/import_problem_screen.dart';
+import 'screens/mock_test_screen.dart';
+import 'screens/leaderboard_screen.dart';
+import 'screens/profile_screen.dart';
+import 'screens/learning_paths_screen.dart';
+import 'dart:math';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -109,7 +114,7 @@ class _MainScreenState extends State<MainScreen> {
       case 2:
         return _buildMockTestView();
       case 3:
-        return _buildLearnView();
+        return const LearningPathsScreen();
       default:
         return const SizedBox.shrink();
     }
@@ -160,6 +165,8 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildMockTestView() {
+    final hasEnoughProblems = _problems.length >= 3;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -192,79 +199,74 @@ class _MainScreenState extends State<MainScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Mock test feature coming soon!'),
-                  ),
-                );
-              },
-              child: const Text('Start Mock Test'),
-            ),
+            if (!hasEnoughProblems) ...[
+              Text(
+                'You need at least 3 problems to start a mock test.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: CandyColors.error,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Current problems: ${_problems.length}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: _openImportScreen,
+                icon: const Icon(Icons.add),
+                label: const Text('Import More Problems'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: CandyColors.blue,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ] else ...[
+              ElevatedButton(
+                onPressed: _startMockTest,
+                child: const Text('Start Mock Test'),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildLearnView() {
-    final learningPaths = [
-      'Dynamic Programming',
-      'Graph Theory',
-      'Greedy Algorithms',
-      'Data Structures'
-    ];
+  Future<void> _startMockTest() async {
+    // Select 3 random problems
+    final random = Random();
+    final availableProblems = List<Problem>.from(_problems);
+    final selectedProblems = <Problem>[];
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(
-          'Learning Paths',
-          style: Theme.of(context).textTheme.displaySmall,
-        ),
-        const SizedBox(height: 24),
-        ...learningPaths.map((path) => Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(16),
-              decoration: CandyTheme.cardDecoration,
-              child: Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: CandyColors.yellow,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.book,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          path,
-                          style: Theme.of(context).textTheme.labelLarge,
-                        ),
-                        Text(
-                          'Master the fundamentals with AI guidance',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right, color: CandyColors.textLight),
-                ],
-              ),
-            )),
-      ],
+    for (int i = 0; i < 3; i++) {
+      final index = random.nextInt(availableProblems.length);
+      selectedProblems.add(availableProblems.removeAt(index));
+    }
+
+    // Create mock test
+    final mockTest = MockTest(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      problems: selectedProblems,
+      startTime: DateTime.now(),
+      durationMinutes: 90,
     );
+
+    // Navigate to mock test screen
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => MockTestScreen(
+          mockTest: mockTest,
+          onSubmit: _handleSubmission,
+        ),
+      ),
+    );
+
+    // Reload data after returning from mock test
+    await _loadData();
   }
+
 
   void _openProblem(Problem problem) {
     Navigator.of(context).push(
@@ -282,30 +284,140 @@ class _MainScreenState extends State<MainScreen> {
     String language,
     String code,
   ) async {
-    // Store submission without AI evaluation
+    // Show loading indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            SizedBox(width: 12),
+            Text('Running your code...'),
+          ],
+        ),
+        duration: Duration(seconds: 30),
+      ),
+    );
+
+    // Get the problem to access test cases
+    final problem = _problems.firstWhere((p) => p.id == problemId);
+
+    // Convert test cases to the format expected by PistonService
+    final testCases = problem.testCases
+        .map((tc) => {
+              'input': tc.input,
+              'expectedOutput': tc.expectedOutput,
+            })
+        .toList();
+
+    // Map language names to Piston format
+    final languageMap = {
+      'JavaScript': 'javascript',
+      'Python': 'python',
+      'C++': 'cpp',
+      'Java': 'java',
+    };
+
+    final pistonLanguage = languageMap[language] ?? 'javascript';
+
+    // Run code against test cases
+    final result = await PistonService.runTestCases(
+      code: code,
+      language: pistonLanguage,
+      testCases: testCases,
+    );
+
+    // Determine status based on results
+    String status;
+    String feedback;
+
+    if (result['overallSuccess']) {
+      status = 'Success';
+      feedback = 'All test cases passed! (${result['passedCount']}/${result['totalCount']})';
+    } else {
+      // Check for runtime errors
+      final hasRuntimeError = (result['results'] as List).any((r) => r['error'].toString().isNotEmpty);
+
+      if (hasRuntimeError) {
+        status = 'Runtime Error';
+        final firstError = (result['results'] as List).firstWhere((r) => r['error'].toString().isNotEmpty);
+        feedback = 'Runtime error: ${firstError['error']}';
+      } else {
+        status = 'Wrong Answer';
+        feedback = 'Passed ${result['passedCount']} out of ${result['totalCount']} test cases.';
+
+        // Add details about failed test case
+        final failedTest = (result['results'] as List).firstWhere((r) => !r['passed']);
+        feedback += '\n\nFailed test case #${failedTest['testCaseNumber']}:';
+        feedback += '\nInput: ${failedTest['input']}';
+        feedback += '\nExpected: ${failedTest['expectedOutput']}';
+        feedback += '\nGot: ${failedTest['actualOutput']}';
+      }
+    }
+
+    // Get execution time from first test case (as sample)
+    final firstResult = (result['results'] as List).first;
+    final runtime = firstResult['runtime'] ?? '0ms';
+
+    // Create submission with execution details
     final submission = Submission(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       problemId: problemId,
       language: language,
       code: code,
-      status: 'Success',
-      feedback: 'Code submitted successfully! Manual review recommended.',
+      status: status,
+      feedback: feedback,
       timestamp: DateTime.now().millisecondsSinceEpoch,
+      runtime: runtime,
+      stdout: firstResult['actualOutput'] ?? '',
+      stderr: firstResult['error'] ?? '',
+      exitCode: result['overallSuccess'] ? 0 : 1,
+      passedTestCases: result['passedCount'],
+      totalTestCases: result['totalCount'],
     );
 
     await DatabaseService().insertSubmission(submission);
     await _loadData();
+
+    // Hide loading indicator and show result
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    // Show success/failure message
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          status == 'Success'
+              ? '✓ All tests passed!'
+              : '✗ $status - Check submission details',
+        ),
+        backgroundColor: status == 'Success' ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   void _showLeaderboard() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Leaderboard feature coming soon!')),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => LeaderboardScreen(
+          currentUser: _user,
+        ),
+      ),
     );
   }
 
   void _showProfile() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile feature coming soon!')),
+    if (_user == null) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ProfileScreen(
+          user: _user!,
+        ),
+      ),
     );
   }
 
@@ -440,6 +552,132 @@ class _ProblemCard extends StatelessWidget {
   }
 }
 
+class _CodeEditorWithLineNumbers extends StatefulWidget {
+  final TextEditingController controller;
+  final String language;
+  final String placeholder;
+
+  const _CodeEditorWithLineNumbers({
+    required this.controller,
+    required this.language,
+    required this.placeholder,
+  });
+
+  @override
+  State<_CodeEditorWithLineNumbers> createState() => _CodeEditorWithLineNumbersState();
+}
+
+class _CodeEditorWithLineNumbersState extends State<_CodeEditorWithLineNumbers> {
+  final ScrollController _scrollController = ScrollController();
+  final ScrollController _lineNumberScrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_syncScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_syncScroll);
+    _scrollController.dispose();
+    _lineNumberScrollController.dispose();
+    super.dispose();
+  }
+
+  void _syncScroll() {
+    if (_lineNumberScrollController.hasClients) {
+      _lineNumberScrollController.jumpTo(_scrollController.offset);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = widget.controller.text.isEmpty
+        ? widget.placeholder.split('\n')
+        : widget.controller.text.split('\n');
+    final lineCount = lines.length;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Line numbers
+        Container(
+          width: 50,
+          decoration: const BoxDecoration(
+            color: Color(0xFF1E1F26),
+            border: Border(
+              right: BorderSide(
+                color: Color(0xFF44475A),
+                width: 1,
+              ),
+            ),
+          ),
+          child: SingleChildScrollView(
+            controller: _lineNumberScrollController,
+            physics: const NeverScrollableScrollPhysics(),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: List.generate(
+                  lineCount > 0 ? lineCount : 1,
+                  (index) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '${index + 1}',
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                        color: Color(0xFF6272A4),
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // Code editor
+        Expanded(
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              controller: widget.controller,
+              maxLines: null,
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 13,
+                color: Color(0xFFF8F8F2), // Dracula foreground
+                height: 1.5,
+              ),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: widget.placeholder,
+                hintStyle: const TextStyle(
+                  color: Color(0xFF6272A4), // Dracula comment color
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+              cursorColor: const Color(0xFFFF79C6), // Dracula pink
+              onChanged: (value) {
+                setState(() {}); // Refresh to update line numbers
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class ProblemDetailScreen extends StatefulWidget {
   final Problem problem;
   final Function(String problemId, String language, String code) onSubmit;
@@ -560,7 +798,6 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
           ),
           const SizedBox(height: 16),
           Container(
-            height: 400,
             decoration: BoxDecoration(
               color: const Color(0xFF282A36),
               borderRadius: BorderRadius.circular(16),
@@ -613,51 +850,19 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
                     ],
                   ),
                 ),
-                // Code editor with syntax highlighting
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: HighlightView(
-                      _codeController.text.isEmpty ? _getPlaceholderCode(_language) : _codeController.text,
-                      language: _getHighlightLanguage(_language),
-                      theme: draculaTheme,
-                      padding: EdgeInsets.zero,
-                      textStyle: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 14,
-                        height: 1.5,
-                      ),
-                    ),
+                // Code editor with line numbers
+                Container(
+                  constraints: const BoxConstraints(
+                    minHeight: 300,
+                    maxHeight: 500,
+                  ),
+                  child: _CodeEditorWithLineNumbers(
+                    controller: _codeController,
+                    language: _getHighlightLanguage(_language),
+                    placeholder: _getPlaceholderCode(_language),
                   ),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Editable text field (for input)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: TextField(
-              controller: _codeController,
-              maxLines: 10,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                color: Colors.white,
-                fontSize: 14,
-              ),
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                hintText: _getPlaceholderCode(_language),
-                hintStyle: const TextStyle(color: Colors.white38),
-              ),
-              cursorColor: CandyColors.pink,
-              onChanged: (value) {
-                setState(() {}); // Refresh to update highlight view
-              },
             ),
           ),
           const SizedBox(height: 24),

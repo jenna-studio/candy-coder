@@ -122,35 +122,118 @@ class DashboardScreen extends StatelessWidget {
           const SizedBox(height: 16),
           ...recentSubmissions.take(3).map((submission) {
             final isSuccess = submission.status == 'Success';
+            final isRuntimeError = submission.status == 'Runtime Error';
+
+            // Determine status color
+            Color statusColor;
+            IconData statusIcon;
+            if (isSuccess) {
+              statusColor = CandyColors.success;
+              statusIcon = Icons.check_circle;
+            } else if (isRuntimeError) {
+              statusColor = CandyColors.error;
+              statusIcon = Icons.error;
+            } else {
+              statusColor = CandyColors.yellow;
+              statusIcon = Icons.cancel;
+            }
+
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
               decoration: CandyTheme.cardDecoration,
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    isSuccess ? Icons.check_circle : Icons.cancel,
-                    color: isSuccess ? CandyColors.success : CandyColors.error,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Problem #${submission.problemId}',
-                          style: Theme.of(context).textTheme.labelLarge,
+                  Row(
+                    children: [
+                      Icon(
+                        statusIcon,
+                        color: statusColor,
+                        size: 24,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Problem #${submission.problemId}',
+                              style: Theme.of(context).textTheme.labelLarge,
+                            ),
+                            Text(
+                              submission.status,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: statusColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ],
                         ),
+                      ),
+                      if (submission.runtime != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: CandyColors.blue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            submission.runtime!,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: CandyColors.blue,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (submission.passedTestCases != null &&
+                      submission.totalTestCases != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const SizedBox(width: 36), // Align with text above
+                        Icon(
+                          Icons.check_box,
+                          size: 16,
+                          color: CandyColors.textLight,
+                        ),
+                        const SizedBox(width: 4),
                         Text(
-                          DateTime.fromMillisecondsSinceEpoch(submission.timestamp)
-                              .toString()
-                              .split(' ')[0],
+                          'Test Cases: ${submission.passedTestCases}/${submission.totalTestCases}',
                           style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        const SizedBox(width: 16),
+                        Text(
+                          submission.language,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: CandyColors.textLight,
+                              ),
                         ),
                       ],
                     ),
+                  ],
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const SizedBox(width: 36), // Align with text above
+                      Icon(
+                        Icons.access_time,
+                        size: 14,
+                        color: CandyColors.textLight,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        DateTime.fromMillisecondsSinceEpoch(submission.timestamp)
+                            .toString()
+                            .split('.')[0], // Remove microseconds
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: CandyColors.textLight,
+                            ),
+                      ),
+                    ],
                   ),
-                  const Icon(Icons.chevron_right, color: CandyColors.textLight),
                 ],
               ),
             );

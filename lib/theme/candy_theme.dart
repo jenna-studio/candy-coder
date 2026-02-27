@@ -10,6 +10,7 @@ class CandyColors {
 
   // UI colors
   static const Color success = Color(0xFF10B981);
+  static const Color green = Color(0xFF10B981); // Alias for success
   static const Color error = Color(0xFFF43F5E);
   static const Color warning = Color(0xFFF59E0B);
 

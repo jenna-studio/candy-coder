@@ -24,8 +24,9 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -51,7 +52,13 @@ class DatabaseService {
         code TEXT,
         status TEXT,
         feedback TEXT,
-        timestamp INTEGER
+        timestamp INTEGER,
+        runtime TEXT,
+        stdout TEXT,
+        stderr TEXT,
+        exitCode INTEGER,
+        passedTestCases INTEGER,
+        totalTestCases INTEGER
       )
     ''');
 
@@ -204,6 +211,18 @@ class DatabaseService {
 
     for (var problem in seedProblems) {
       await db.insert('problems', problem);
+    }
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Add new columns to submissions table for Piston API execution details
+      await db.execute('ALTER TABLE submissions ADD COLUMN runtime TEXT');
+      await db.execute('ALTER TABLE submissions ADD COLUMN stdout TEXT');
+      await db.execute('ALTER TABLE submissions ADD COLUMN stderr TEXT');
+      await db.execute('ALTER TABLE submissions ADD COLUMN exitCode INTEGER');
+      await db.execute('ALTER TABLE submissions ADD COLUMN passedTestCases INTEGER');
+      await db.execute('ALTER TABLE submissions ADD COLUMN totalTestCases INTEGER');
     }
   }
 
