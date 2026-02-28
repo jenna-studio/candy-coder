@@ -153,7 +153,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Widget _buildPodium() {
-    final first = _leaderboard.length > 0 ? _leaderboard[0] : null;
+    final first = _leaderboard.isNotEmpty ? _leaderboard[0] : null;
     final second = _leaderboard.length > 1 ? _leaderboard[1] : null;
     final third = _leaderboard.length > 2 ? _leaderboard[2] : null;
 

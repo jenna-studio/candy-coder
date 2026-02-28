@@ -321,7 +321,7 @@ class _ImportProblemScreenState extends State<ImportProblemScreen> {
                             builder: (context) => const LeetCodeImportScreen(),
                           ),
                         );
-                        if (result == true && mounted) {
+                        if (result == true && context.mounted) {
                           // Problems were imported successfully
                           Navigator.of(context).pop(true);
                         }

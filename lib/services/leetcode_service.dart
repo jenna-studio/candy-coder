@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/problem.dart';
 
@@ -93,7 +94,7 @@ class LeetCodeService {
               await Future.delayed(const Duration(milliseconds: 200));
             }
           } catch (e) {
-            print('Error converting problem ${q['title']}: $e');
+            debugPrint('Error converting problem ${q['title']}: $e');
             continue;
           }
         }
@@ -150,7 +151,7 @@ class LeetCodeService {
         final data = jsonDecode(response.body);
 
         if (data['errors'] != null) {
-          print('GraphQL Error for $titleSlug: ${data['errors']}');
+          debugPrint('GraphQL Error for $titleSlug: ${data['errors']}');
           return null;
         }
 
@@ -162,7 +163,7 @@ class LeetCodeService {
       }
       return null;
     } catch (e) {
-      print('Error fetching problem details for $titleSlug: $e');
+      debugPrint('Error fetching problem details for $titleSlug: $e');
       return null;
     }
   }
@@ -176,7 +177,7 @@ class LeetCodeService {
       final detailedProblem = await fetchProblemBySlug(titleSlug);
       return detailedProblem;
     } catch (e) {
-      print('Error converting problem ${q['title']}: $e');
+      debugPrint('Error converting problem ${q['title']}: $e');
       return null;
     }
   }

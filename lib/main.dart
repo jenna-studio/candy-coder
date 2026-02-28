@@ -18,6 +18,12 @@ import 'screens/settings_screen.dart';
 import 'l10n/app_localizations.dart';
 import 'providers/locale_provider.dart';
 import 'dart:math';
+import 'package:re_editor/re_editor.dart';
+import 'package:re_highlight/re_highlight.dart';
+import 'package:re_highlight/languages/javascript.dart';
+import 'package:re_highlight/languages/python.dart';
+import 'package:re_highlight/languages/cpp.dart';
+import 'package:re_highlight/languages/java.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -454,6 +460,8 @@ class _MainScreenState extends State<MainScreen> {
     await DatabaseService().insertSubmission(submission);
     await _loadData();
 
+    if (!mounted) return;
+
     // Hide loading indicator and show result
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
@@ -669,85 +677,179 @@ class _CodeEditorWithLineNumbers extends StatefulWidget {
 }
 
 class _CodeEditorWithLineNumbersState extends State<_CodeEditorWithLineNumbers> {
-  final ScrollController _scrollController = ScrollController();
+  late CodeLineEditingController _codeController;
+
+  @override
+  void initState() {
+    super.initState();
+    _codeController = CodeLineEditingController.fromText(widget.controller.text);
+
+    // Sync changes from CodeLineEditingController back to TextEditingController
+    _codeController.addListener(() {
+      if (widget.controller.text != _codeController.text) {
+        widget.controller.text = _codeController.text;
+      }
+    });
+
+    // Sync changes from TextEditingController to CodeLineEditingController
+    widget.controller.addListener(() {
+      if (_codeController.text != widget.controller.text) {
+        _codeController.text = widget.controller.text;
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(_CodeEditorWithLineNumbers oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      if (_codeController.text != widget.controller.text) {
+        _codeController.text = widget.controller.text;
+      }
+    }
+  }
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _codeController.dispose();
     super.dispose();
+  }
+
+  String _getLanguageMode(String language) {
+    switch (language) {
+      case 'javascript':
+        return 'javascript';
+      case 'python':
+        return 'python';
+      case 'cpp':
+        return 'cpp';
+      case 'java':
+        return 'java';
+      default:
+        return 'javascript';
+    }
+  }
+
+  Mode _getHighlightMode(String language) {
+    switch (language) {
+      case 'javascript':
+        return langJavascript;
+      case 'python':
+        return langPython;
+      case 'cpp':
+        return langCpp;
+      case 'java':
+        return langJava;
+      default:
+        return langJavascript;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final lineCount = '\n'.allMatches(widget.controller.text).length + 1;
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Line numbers column
-        Container(
-          width: 45,
-          color: const Color(0xFF21222C),
-          padding: const EdgeInsets.only(top: 16, right: 8, left: 8, bottom: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: List.generate(
-              lineCount > 0 ? lineCount : 1,
-              (i) => SizedBox(
-                height: 21,
-                child: Text(
-                  '${i + 1}',
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 14,
-                    color: Color(0xFF6272A4),
-                    height: 1.5,
-                  ),
-                ),
-              ),
+    return CodeEditor(
+      controller: _codeController,
+      style: CodeEditorStyle(
+        fontSize: 14,
+        fontFamily: 'monospace',
+        fontHeight: 1.5,
+        // Dracula-inspired dark theme colors
+        backgroundColor: const Color(0xFF282A36),
+        textColor: const Color(0xFFF8F8F2),
+        cursorColor: const Color(0xFFFF79C6), // Pink cursor
+        codeTheme: CodeHighlightTheme(
+          languages: {
+            _getLanguageMode(widget.language): CodeHighlightThemeMode(
+              mode: _getHighlightMode(widget.language),
             ),
-          ),
+          },
+          theme: _draculaTheme(),
         ),
-
-        // Code editor - directly editable
-        Expanded(
-          child: Container(
-            color: const Color(0xFF282A36), // Dracula background
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              child: TextField(
-                controller: widget.controller,
-                maxLines: null,
-                keyboardType: TextInputType.multiline,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 14,
-                  color: Color(0xFFF8F8F2), // Dracula foreground
-                  height: 1.5,
-                ),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: const Color(0xFF282A36), // Dracula background
-                  contentPadding: const EdgeInsets.all(16),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  hintText: widget.placeholder,
-                  hintStyle: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 14,
-                    color: Color(0xFF6272A4), // Dracula comment
-                    height: 1.5,
-                  ),
-                ),
-                cursorColor: const Color(0xFFFF79C6), // Dracula pink
-                onChanged: (_) => setState(() {}), // Update line numbers
-              ),
-            ),
+      ),
+      indicatorBuilder: (context, editingController, chunkController, notifier) {
+        return DefaultCodeLineNumber(
+          controller: editingController,
+          notifier: notifier,
+          textStyle: const TextStyle(
+            color: Color(0xFF6272A4), // Comment color for line numbers
+            fontSize: 14,
+            fontFamily: 'monospace',
           ),
-        ),
-      ],
+        );
+      },
     );
+  }
+
+  // Official Dracula theme colors for syntax highlighting
+  Map<String, TextStyle> _draculaTheme() {
+    return {
+      'root': const TextStyle(
+        color: Color(0xFFF8F8F2),
+        backgroundColor: Color(0xFF282A36),
+      ),
+      'keyword': const TextStyle(
+        color: Color(0xFFFF79C6), // Pink
+        fontWeight: FontWeight.bold,
+      ),
+      'built_in': const TextStyle(color: Color(0xFF8BE9FD)), // Cyan
+      'type': const TextStyle(color: Color(0xFF8BE9FD)), // Cyan
+      'literal': const TextStyle(color: Color(0xFFBD93F9)), // Purple
+      'number': const TextStyle(color: Color(0xFFBD93F9)), // Purple
+      'regexp': const TextStyle(color: Color(0xFFF1FA8C)), // Yellow
+      'string': const TextStyle(color: Color(0xFFF1FA8C)), // Yellow
+      'subst': const TextStyle(color: Color(0xFFF8F8F2)), // Foreground
+      'symbol': const TextStyle(color: Color(0xFFF1FA8C)), // Yellow
+      'class': const TextStyle(color: Color(0xFF8BE9FD)), // Cyan
+      'function': const TextStyle(color: Color(0xFF50FA7B)), // Green
+      'title': const TextStyle(color: Color(0xFF50FA7B)), // Green
+      'params': const TextStyle(color: Color(0xFFFFB86C)), // Orange
+      'comment': const TextStyle(
+        color: Color(0xFF6272A4), // Comment
+        fontStyle: FontStyle.italic,
+      ),
+      'doctag': const TextStyle(color: Color(0xFF8BE9FD)), // Cyan
+      'meta': const TextStyle(color: Color(0xFFFF79C6)), // Pink
+      'meta-keyword': const TextStyle(color: Color(0xFFFF79C6)), // Pink
+      'meta-string': const TextStyle(color: Color(0xFFF1FA8C)), // Yellow
+      'section': const TextStyle(color: Color(0xFF8BE9FD)), // Cyan
+      'tag': const TextStyle(color: Color(0xFFFF79C6)), // Pink
+      'name': const TextStyle(color: Color(0xFF8BE9FD)), // Cyan
+      'builtin-name': const TextStyle(color: Color(0xFF8BE9FD)), // Cyan
+      'attr': const TextStyle(color: Color(0xFF50FA7B)), // Green
+      'attribute': const TextStyle(color: Color(0xFF50FA7B)), // Green
+      'variable': const TextStyle(color: Color(0xFFF8F8F2)), // Foreground
+      'bullet': const TextStyle(color: Color(0xFF8BE9FD)), // Cyan
+      'code': const TextStyle(color: Color(0xFF50FA7B)), // Green
+      'emphasis': const TextStyle(
+        color: Color(0xFFF1FA8C), // Yellow
+        fontStyle: FontStyle.italic,
+      ),
+      'strong': const TextStyle(
+        color: Color(0xFFFFB86C), // Orange
+        fontWeight: FontWeight.bold,
+      ),
+      'formula': const TextStyle(color: Color(0xFF50FA7B)), // Green
+      'link': const TextStyle(color: Color(0xFF8BE9FD)), // Cyan
+      'quote': const TextStyle(
+        color: Color(0xFFF1FA8C), // Yellow
+        fontStyle: FontStyle.italic,
+      ),
+      'selector-tag': const TextStyle(color: Color(0xFFFF79C6)), // Pink
+      'selector-id': const TextStyle(color: Color(0xFF50FA7B)), // Green
+      'selector-class': const TextStyle(color: Color(0xFF8BE9FD)), // Cyan
+      'selector-attr': const TextStyle(color: Color(0xFF50FA7B)), // Green
+      'selector-pseudo': const TextStyle(color: Color(0xFF8BE9FD)), // Cyan
+      'template-tag': const TextStyle(color: Color(0xFFF8F8F2)), // Foreground
+      'template-variable': const TextStyle(color: Color(0xFFF8F8F2)), // Foreground
+      'addition': TextStyle(
+        color: const Color(0xFF50FA7B), // Green
+        backgroundColor: const Color(0xFF50FA7B).withValues(alpha: 0.1),
+      ),
+      'deletion': TextStyle(
+        color: const Color(0xFFFF5555), // Red
+        backgroundColor: const Color(0xFFFF5555).withValues(alpha: 0.1),
+      ),
+    };
   }
 }
 
@@ -1104,7 +1206,7 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
                           _language,
                           _codeController.text,
                         );
-                        if (mounted) {
+                        if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Solution submitted successfully!'),

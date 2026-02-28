@@ -52,6 +52,9 @@ dependencies:
   # Syntax highlighting
   flutter_highlight: ^0.7.0
 
+  # Code editor
+  re_editor: ^0.8.0
+
   # State management & utilities
   provider: ^6.1.1
   shared_preferences: ^2.2.2

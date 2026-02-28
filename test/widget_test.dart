@@ -7,11 +7,18 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:candy_coder/main.dart';
+import 'package:provider/provider.dart';
+import 'package:candy_coder/providers/locale_provider.dart';
 
 void main() {
   testWidgets('App loads test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const CandyCoderApp());
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => LocaleProvider(),
+        child: const CandyCoderApp(),
+      ),
+    );
 
     // Verify that the app loads
     await tester.pumpAndSettle();
